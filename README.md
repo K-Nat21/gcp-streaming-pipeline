@@ -2,7 +2,7 @@
 
 An event-driven data pipeline on Google Cloud. Simulated e-commerce orders are published to Pub/Sub, validated and deduplicated by a Cloud Function, stored in BigQuery, and shown on a live dashboard.
 
-**Live project page:** https://YOUR_USERNAME.github.io/gcp-streaming-pipeline/
+**Live project page:** https://k-nat21.github.io/gcp-streaming-pipeline/
 
 ![Dashboard](docs/dashboard.png)
 
