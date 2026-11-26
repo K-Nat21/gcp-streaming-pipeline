@@ -1,199 +1,318 @@
-<title>Order Stream Dashboard</title>
-<meta name="claude:viewport-fit-sides" content="cover">
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Real-Time Order Streaming Pipeline</title>
+<meta name="description" content="Event-driven data pipeline on Google Cloud: Pub/Sub, Cloud Functions and BigQuery with a live dashboard.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
-/* Layout: sticky-free single column of panels. Header, 4 KPI tiles, a wide per-minute area chart beside revenue-by-city bars, then product bars beside the pipeline diagram. */
+/* Layout: one narrow reading column. Hero, live metrics, architecture flow, design decisions, challenges, stack, next steps. */
 :root {
   --bg: #0a1020;
   --surface: #111a2f;
   --line: #22304d;
   --grid: #1b2744;
   --ink: #e8eefa;
-  --muted: #90a0bd;
+  --muted: #93a3c0;
   --accent: #38bdf8;
-  --accent-soft: rgba(56, 189, 248, 0.16);
+  --accent-ink: #04202e;
+  --accent-soft: rgba(56, 189, 248, 0.14);
   --good: #34d399;
   --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f2f5fb; --surface: #ffffff; --line: #d9e1f0; --grid: #e6ebf5;
-    --ink: #0f1a30; --muted: #566680; --accent: #0369a1; --accent-soft: rgba(3, 105, 161, 0.12);
-    --good: #047857; color-scheme: light;
+  :root {
+    --bg: #f3f6fc; --surface: #ffffff; --line: #d9e1f0; --grid: #e6ebf5;
+    --ink: #0f1a30; --muted: #566680; --accent: #0369a1; --accent-ink: #ffffff;
+    --accent-soft: rgba(3, 105, 161, 0.1); --good: #047857; color-scheme: light;
   }
 }
-:root[data-theme="light"] {
-  --bg: #f2f5fb; --surface: #ffffff; --line: #d9e1f0; --grid: #e6ebf5;
-  --ink: #0f1a30; --muted: #566680; --accent: #0369a1; --accent-soft: rgba(3, 105, 161, 0.12);
-  --good: #047857; color-scheme: light;
-}
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
-  background: var(--bg); color: var(--ink);
-  font-family: var(--font-body); font-size: 14px; line-height: 1.5;
-  padding-block: 28px 40px;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 56px max(16px, env(safe-area-inset-left, 0px));
 }
-.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; }
-h1 { font-family: var(--font-display); font-size: clamp(24px, 4vw, 32px); font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
-.sub { color: var(--muted); margin: 4px 0 0; }
-.badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 12px; color: var(--muted); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; min-width: 0; }
-.label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
-.value { font-family: var(--font-display); font-size: clamp(26px, 3.2vw, 34px); font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
-.value.accent { color: var(--accent); }
-.note { color: var(--muted); font-size: 12px; margin-top: 2px; }
-.grid2 { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; }
+.wrap { max-width: 980px; margin: 0 auto; }
+nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0; font-size: 14px; flex-wrap: wrap; }
+nav a { color: var(--muted); text-decoration: none; margin-left: 18px; }
+nav a:first-child { margin-left: 0; }
+nav a:hover, nav a:focus-visible { color: var(--ink); }
+.who { color: var(--ink); font-weight: 600; font-family: var(--font-display); }
+.links { display: flex; flex-wrap: wrap; gap: 4px 0; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.hero { padding: 40px 0 28px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+h1 { font-family: var(--font-display); font-size: clamp(32px, 6vw, 52px); line-height: 1.08; margin: 10px 0 16px; letter-spacing: -0.02em; text-wrap: balance; }
+.lede { font-size: 18px; color: var(--muted); max-width: 62ch; margin: 0 0 24px; }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px; text-decoration: none; border: 1px solid var(--line); color: var(--ink); background: var(--surface); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn:hover { filter: brightness(1.1); }
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 28px 0 0; padding: 0; list-style: none; }
+.facts li { border-top: 2px solid var(--line); padding-top: 10px; }
+.facts b { display: block; font-family: var(--font-display); font-size: 24px; font-variant-numeric: tabular-nums; }
+.facts span { color: var(--muted); font-size: 13px; }
+section { padding-top: 48px; }
+h2 { font-family: var(--font-display); font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.sec-sub { color: var(--muted); margin: 0 0 20px; max-width: 64ch; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; min-width: 0; }
-.panel h2 { font-family: var(--font-display); font-size: 16px; font-weight: 500; margin: 0; }
-.panel .desc { color: var(--muted); font-size: 12px; margin: 2px 0 14px; }
-/* bars */
-.bars { display: flex; flex-direction: column; gap: 12px; }
-.row { display: grid; grid-template-columns: 84px minmax(0, 1fr) 64px; align-items: center; gap: 12px; cursor: default; }
-.row .name { color: var(--ink); }
-.track { height: 14px; background: var(--grid); border-radius: 4px; position: relative; }
-.fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 0 4px 4px 0; }
-.row:hover .fill { filter: brightness(1.15); }
-.row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
-/* chart */
+/* live */
+.live-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 14px; }
+.badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.badge.live .dot { background: var(--good); }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi .l { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.kpi .v { font-family: var(--font-display); font-size: clamp(22px, 3vw, 30px); font-weight: 700; font-variant-numeric: tabular-nums; }
+.live-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; }
+.live-grid h3 { font-size: 13px; font-weight: 500; color: var(--muted); margin: 0 0 8px; }
 .chart { width: 100%; height: auto; display: block; }
 .chart text { fill: var(--muted); font-family: var(--font-body); font-size: 11px; }
-.tip { position: fixed; pointer-events: none; z-index: 20; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); opacity: 0; transition: opacity 0.1s; }
-.tip b { font-variant-numeric: tabular-nums; }
-/* pipeline */
-.flow { display: flex; flex-direction: column; gap: 0; }
-.step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 14px; }
-.step:last-child { padding-bottom: 0; }
-.step::before { content: ""; position: absolute; left: 13px; top: 28px; bottom: 0; width: 2px; background: var(--line); }
-.step:last-child::before { display: none; }
-.pip { width: 28px; height: 28px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 11px; font-weight: 600; font-family: var(--font-display); }
-.step strong { display: block; font-weight: 600; }
-.step span { color: var(--muted); font-size: 12px; }
-footer { color: var(--muted); font-size: 12px; }
-code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; background: var(--grid); padding: 2px 6px; border-radius: 4px; color: var(--ink); }
-@media (max-width: 900px) { .grid2 { grid-template-columns: minmax(0, 1fr); } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 420px) { .row { grid-template-columns: 76px minmax(0, 1fr) 56px; gap: 8px; } }
-@media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+.row { display: grid; grid-template-columns: 78px minmax(0, 1fr) 56px; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 14px; }
+.track { height: 12px; background: var(--grid); border-radius: 4px; position: relative; }
+.fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 0 4px 4px 0; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tip { position: fixed; pointer-events: none; z-index: 20; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; opacity: 0; }
+/* flow */
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; counter-reset: s; }
+.flow li { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; position: relative; min-width: 0; }
+.flow li::after { content: "\2192"; position: absolute; right: -22px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 18px; }
+.flow li:last-child::after { display: none; }
+.flow b { display: block; font-family: var(--font-display); font-size: 15px; margin-bottom: 4px; }
+.flow span { color: var(--muted); font-size: 13px; line-height: 1.45; display: block; }
+/* lists */
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cols h3 { font-family: var(--font-display); font-size: 16px; margin: 0 0 6px; }
+.cols p { margin: 0; color: var(--muted); font-size: 15px; }
+.issue { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 6px 20px; padding: 16px 0; border-top: 1px solid var(--line); }
+.issue:last-child { border-bottom: 1px solid var(--line); }
+.issue h3 { margin: 0; font-family: var(--font-display); font-size: 15px; }
+.issue p { margin: 0 0 4px; font-size: 15px; color: var(--muted); }
+.issue p b { color: var(--ink); font-weight: 600; }
+code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; background: var(--grid); padding: 1px 6px; border-radius: 4px; color: var(--ink); overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.chips li { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 14px; font-size: 14px; }
+.next { margin: 0; padding-left: 20px; color: var(--muted); }
+.next li { margin-bottom: 6px; }
+.next b { color: var(--ink); font-weight: 600; }
+footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; }
+footer a { color: var(--ink); }
+@media (max-width: 860px) {
+  .facts, .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .live-grid, .cols { grid-template-columns: minmax(0, 1fr); }
+  .flow { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .flow li::after { content: "\2193"; right: auto; left: 50%; top: auto; bottom: -22px; transform: translateX(-50%); }
+  .issue { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
-
+</head>
+<body>
 <div class="wrap">
-  <header>
-    <div>
-      <h1>Real-Time Order Analytics</h1>
-      <p class="sub">Streaming pipeline on GCP: Pub/Sub, Cloud Functions, BigQuery</p>
-    </div>
-    <div class="badge"><span class="dot"></span><span id="stamp">Sample data, API not connected</span></div>
-  </header>
 
-  <section class="kpis" aria-label="Key figures">
-    <div class="kpi"><div class="label">Total revenue</div><div class="value accent" id="k-rev"></div><div class="note">All cities, all sessions</div></div>
-    <div class="kpi"><div class="label">Orders</div><div class="value" id="k-orders"></div><div class="note">Rows in order_events</div></div>
-    <div class="kpi"><div class="label">Avg order value</div><div class="value" id="k-aov"></div><div class="note">Revenue / orders</div></div>
-    <div class="kpi"><div class="label">Top city</div><div class="value" id="k-city"></div><div class="note" id="k-city-note"></div></div>
-  </section>
+<nav>
+  <span class="who" id="who-name">YOUR NAME</span>
+  <div class="links">
+    <a href="#live">Live data</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#challenges">Challenges</a>
+    <a id="link-gh" href="#">GitHub</a>
+    <a id="link-li" href="#">LinkedIn</a>
+  </div>
+</nav>
 
-  <section class="grid2">
-    <div class="panel">
-      <h2>Orders per minute</h2>
-      <p class="desc" id="ts-desc"></p>
-      <svg class="chart" id="ts" viewBox="0 0 640 260" role="img" aria-label="Orders per minute area chart"></svg>
-    </div>
-    <div class="panel">
-      <h2>Revenue by city</h2>
-      <p class="desc">Sum of amount, highest first</p>
-      <div class="bars" id="city-bars"></div>
-    </div>
-  </section>
+<header class="hero">
+  <div class="eyebrow">Data engineering project</div>
+  <h1>Real-Time Order Streaming Pipeline</h1>
+  <p class="lede">An event-driven pipeline on Google Cloud. Simulated e-commerce orders flow through Pub/Sub, are validated and deduplicated by a Cloud Function, land in BigQuery, and appear on a live dashboard within seconds.</p>
+  <div class="btns">
+    <a class="btn primary" href="#live">See live data</a>
+    <a class="btn" id="btn-gh" href="#">View source on GitHub</a>
+  </div>
+  <ul class="facts">
+    <li><b>1 / sec</b><span>simulated order events</span></li>
+    <li><b>3</b><span>core GCP services</span></li>
+    <li><b>20 s</b><span>dashboard refresh</span></li>
+    <li><b>60 min</b><span>rolling chart window</span></li>
+  </ul>
+</header>
 
-  <section class="grid2">
-    <div class="panel">
-      <h2>Orders by product</h2>
-      <p class="desc">Count of orders, highest first</p>
-      <div class="bars" id="prod-bars"></div>
+<section id="live">
+  <h2>Live from BigQuery</h2>
+  <p class="sec-sub">This panel calls a small Cloud Function that queries the <code>streaming.order_events</code> table. Results are cached for 20 seconds so a busy page cannot run up query costs.</p>
+  <div class="panel">
+    <div class="live-head">
+      <strong>Order activity</strong>
+      <span class="badge" id="badge"><span class="dot"></span><span id="stamp">Sample data</span></span>
     </div>
-    <div class="panel">
-      <h2>How the data flows</h2>
-      <p class="desc">Every order passes through these stages</p>
-      <div class="flow">
-        <div class="step"><div class="pip">1</div><div><strong>Python producer</strong><span>Publishes one order event per second</span></div></div>
-        <div class="step"><div class="pip">2</div><div><strong>Pub/Sub topic</strong><span>Holds events until the function acknowledges them</span></div></div>
-        <div class="step"><div class="pip">3</div><div><strong>Cloud Function</strong><span>Validates each event, dedupes on order_id</span></div></div>
-        <div class="step"><div class="pip">4</div><div><strong>BigQuery</strong><span>streaming.order_events, queried with SQL</span></div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Revenue</div><div class="v" id="k-rev"></div></div>
+      <div class="kpi"><div class="l">Orders</div><div class="v" id="k-orders"></div></div>
+      <div class="kpi"><div class="l">Avg order</div><div class="v" id="k-aov"></div></div>
+      <div class="kpi"><div class="l">Top city</div><div class="v" id="k-city"></div></div>
+    </div>
+    <div class="live-grid">
+      <div>
+        <h3>Orders per minute, last 60 minutes (IST)</h3>
+        <svg class="chart" id="ts" viewBox="0 0 640 320" role="img" aria-label="Orders per minute"></svg>
+      </div>
+      <div>
+        <h3>Revenue by city</h3>
+        <div id="city-bars"></div>
+        <h3 style="margin-top:18px">Orders by product</h3>
+        <div id="prod-bars"></div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <footer>
-    Reads streaming.order_events through a small Cloud Function and refreshes every 20 seconds while this tab is open. Until the function URL is set in <code>API_URL</code>, the numbers shown are sample data.
-  </footer>
+<section id="architecture">
+  <h2>Architecture</h2>
+  <p class="sec-sub">Five stages, each with one job. Everything runs on the Google Cloud free tier plus credits.</p>
+  <ol class="flow">
+    <li><b>Producer</b><span>Python script publishes one JSON order event per second</span></li>
+    <li><b>Pub/Sub</b><span>Topic holds events and retries delivery until acknowledged</span></li>
+    <li><b>Cloud Function</b><span>Validates each event and writes it with an insert ID</span></li>
+    <li><b>BigQuery</b><span>Stores every event in the order_events table</span></li>
+    <li><b>Dashboard API</b><span>Cached SQL aggregates served to this page</span></li>
+  </ol>
+</section>
+
+<section id="design">
+  <h2>Design decisions</h2>
+  <p class="sec-sub">The choices an interviewer is likely to ask about.</p>
+  <div class="cols">
+    <div class="panel"><h3>At-least-once delivery</h3><p>Pub/Sub can deliver a message twice. Each row is inserted with <code>order_id</code> as its insert ID so BigQuery drops duplicate retries.</p></div>
+    <div class="panel"><h3>Bad records do not block the stream</h3><p>Events with a missing ID or a non-positive amount are logged and skipped. A failed insert raises an error so Pub/Sub retries it.</p></div>
+    <div class="panel"><h3>Cached dashboard API</h3><p>One aggregate query runs at most every 20 seconds, however many people open the page. This keeps BigQuery inside its free allowance.</p></div>
+    <div class="panel"><h3>Cost guardrails</h3><p>Maximum instances are capped on both functions, a budget alert is set, and the producer and functions are stopped when not in use.</p></div>
+  </div>
+</section>
+
+<section id="challenges">
+  <h2>Challenges and what I learned</h2>
+  <p class="sec-sub">Every one of these was diagnosed from logs and fixed with a least-privilege IAM role.</p>
+  <div>
+    <div class="issue">
+      <h3>Build failed on deploy</h3>
+      <div><p><b>Cause:</b> the default compute service account lacked the Cloud Build role.</p><p><b>Fix:</b> granted <code>roles/cloudbuild.builds.builder</code>.</p></div>
+    </div>
+    <div class="issue">
+      <h3>Trigger validation error</h3>
+      <div><p><b>Cause:</b> Eventarc could not validate the Pub/Sub trigger without <code>serviceusage.services.use</code>.</p><p><b>Fix:</b> granted <code>roles/serviceusage.serviceUsageConsumer</code> and the Eventarc receiver role.</p></div>
+    </div>
+    <div class="issue">
+      <h3>Messages sent, no rows</h3>
+      <div><p><b>Cause:</b> the push subscription authenticates with an OIDC token, and Cloud Run rejected it with "request was not authenticated".</p><p><b>Fix:</b> granted <code>roles/run.invoker</code> on the function's service to the subscription's service account.</p></div>
+    </div>
+    <div class="issue">
+      <h3>Broke again after redeploy</h3>
+      <div><p><b>Cause:</b> deleting a function deletes its Cloud Run service and the IAM binding on it, so the new service started without permission.</p><p><b>Lesson:</b> this is why infrastructure belongs in Terraform, where bindings are declared once and reapplied.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <h2>Stack</h2>
+  <ul class="chips" style="margin-top:14px">
+    <li>Python</li><li>Pub/Sub</li><li>Cloud Functions (2nd gen)</li><li>Cloud Run</li><li>Eventarc</li><li>BigQuery</li><li>SQL</li><li>IAM</li><li>Looker Studio</li><li>JavaScript</li><li>GitHub Pages</li>
+  </ul>
+</section>
+
+<section id="next">
+  <h2>What I am adding next</h2>
+  <ol class="next" style="margin-top:14px">
+    <li><b>Medallion layers.</b> Bronze raw events, Silver deduplicated and typed, Gold business metrics, built with dbt or Dataform.</li>
+    <li><b>Orchestration.</b> An Airflow DAG to run transformations and quality checks.</li>
+    <li><b>CI/CD.</b> GitHub Actions to test and deploy on every pull request.</li>
+    <li><b>Infrastructure as code.</b> Terraform for topics, tables, functions and IAM.</li>
+  </ol>
+</section>
+
+<footer>
+  <span id="foot-name">KAVYA</span>
+  <span><a id="foot-gh" href="#">GitHub</a> &middot; <a id="foot-li" href="#">LinkedIn</a></span>
+</footer>
+
 </div>
 <div class="tip" id="tip"></div>
 
 <script>
-/* Snapshot values read from the Looker Studio charts. Replace with a BigQuery export to go live. */
-var DEFAULT_DATA = {
-  cities: [["Hyderabad", 225400], ["Mumbai", 219300], ["Delhi", 216900], ["Chennai", 211800], ["Bengaluru", 204900]],
-  products: [["Phone", 865], ["Watch", 859], ["Headphones", 859], ["Laptop", 837], ["Shoes", 814]],
+/* EDIT THESE FOUR VALUES, then commit the file. */
+var CONFIG = {
+  name: "CHAKALA KAVYA",
+  github: "https://github.com/K-Nat21/gcp-streaming-pipeline",
+  linkedin: "https://www.linkedin.com/in/kavya-c-361a07259/",
+  apiUrl: "https://us-central1-gcp-streaming-pipelinee.cloudfunctions.net/order-dashboard-api"
+};
+
+(function () {
+  function set(id, prop, val) { var el = document.getElementById(id); if (el) el[prop] = val; }
+  ["who-name", "foot-name"].forEach(function (id) { set(id, "textContent", CONFIG.name); });
+  ["link-gh", "btn-gh", "foot-gh"].forEach(function (id) { set(id, "href", CONFIG.github); });
+  ["link-li", "foot-li"].forEach(function (id) { set(id, "href", CONFIG.linkedin); });
+  document.title = "Real-Time Order Streaming Pipeline | " + CONFIG.name;
+})();
+
+var SAMPLE = {
+  cities: [["Hyderabad", 293500], ["Mumbai", 284300], ["Delhi", 283500], ["Chennai", 276400], ["Bengaluru", 268000]],
+  products: [["Phone", 1130], ["Watch", 1124], ["Headphones", 1122], ["Laptop", 1091], ["Shoes", 1077]],
   minutes: []
 };
 (function () {
-  var jitter = [58, 57, 59, 58, 60, 58, 56, 58, 59, 57, 58, 58];
-  for (var i = 0; i < 60; i++) DEFAULT_DATA.minutes.push([("0" + Math.floor((439 + i) / 60)).slice(-2) + ":" + ("0" + (439 + i) % 60).slice(-2), jitter[i % jitter.length]]);
+  var j = [58, 57, 59, 58, 60, 58, 56, 58, 59, 57, 58, 58];
+  for (var i = 0; i < 60; i++) {
+    var m = 1217 + i, v = (i > 15 && i < 40) ? j[i % j.length] : (i >= 40 && i < 46 ? 20 : 0);
+    SAMPLE.minutes.push([("0" + Math.floor(m / 60) % 24).slice(-2) + ":" + ("0" + m % 60).slice(-2), v]);
+  }
 })();
 
-function fmt(n) {
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "m";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
-  return String(Math.round(n));
-}
-function fmtFull(n) { return Math.round(n).toLocaleString("en-US"); }
+function fmt(n) { return n >= 1e6 ? (n / 1e6).toFixed(2) + "m" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(Math.round(n)); }
+function full(n) { return Math.round(n).toLocaleString("en-US"); }
 var tip = document.getElementById("tip");
 function showTip(e, html) {
   tip.innerHTML = html; tip.style.opacity = 1;
-  var x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
-  tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px";
+  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = (e.clientY + 14) + "px";
 }
 function hideTip() { tip.style.opacity = 0; }
 
-function bars(el, rows, unit) {
-  var max = Math.max.apply(null, rows.map(function (r) { return r[1]; }));
+function bars(id, rows, money) {
+  var el = document.getElementById(id), max = Math.max.apply(null, rows.map(function (r) { return r[1]; }));
   el.innerHTML = "";
   rows.forEach(function (r) {
     var d = document.createElement("div");
     d.className = "row";
-    d.innerHTML = '<div class="name">' + r[0] + '</div><div class="track"><div class="fill" style="width:' + (r[1] / max * 100) + '%"></div></div><div class="num">' + (unit === "money" ? fmt(r[1]) : fmtFull(r[1])) + "</div>";
-    d.addEventListener("mousemove", function (e) { showTip(e, "<b>" + r[0] + "</b><br>" + fmtFull(r[1]) + (unit === "money" ? " revenue" : " orders")); });
+    d.innerHTML = "<div>" + r[0] + '</div><div class="track"><div class="fill" style="width:' + (r[1] / max * 100) + '%"></div></div><div class="num">' + (money ? fmt(r[1]) : full(r[1])) + "</div>";
+    d.addEventListener("mousemove", function (e) { showTip(e, "<b>" + r[0] + "</b><br>" + full(r[1]) + (money ? " revenue" : " orders")); });
     d.addEventListener("mouseleave", hideTip);
     el.appendChild(d);
   });
 }
 
 function area(svg, counts, labels) {
-  if (counts.length < 2) { svg.innerHTML = '<text x="320" y="130" text-anchor="middle">Waiting for events...</text>'; return; }
-  var W = 640, H = 260, L = 40, R = 12, T = 12, B = 30;
-  var n = counts.length, yMax = Math.max(20, Math.ceil(Math.max.apply(null, counts) * 1.2 / 20) * 20);
-  var sx = function (i) { return L + (W - L - R) * i / (n - 1); };
-  var sy = function (v) { return T + (H - T - B) * (1 - v / yMax); };
+  if (counts.length < 2) { svg.innerHTML = '<text x="320" y="160" text-anchor="middle">Waiting for events...</text>'; return; }
+  var W = 640, H = 320, L = 36, R = 10, T = 10, B = 28, n = counts.length;
+  var yMax = Math.max(20, Math.ceil(Math.max.apply(null, counts) * 1.2 / 20) * 20);
+  function sx(i) { return L + (W - L - R) * i / (n - 1); }
+  function sy(v) { return T + (H - T - B) * (1 - v / yMax); }
   var s = "";
   [0, 1, 2, 3, 4].map(function (k) { return k * yMax / 4; }).forEach(function (t) {
-    s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + sy(t) + '" y2="' + sy(t) + '" stroke="var(--grid)" stroke-width="1"/>';
-    s += '<text x="' + (L - 8) + '" y="' + (sy(t) + 4) + '" text-anchor="end">' + t + "</text>";
+    s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + sy(t) + '" y2="' + sy(t) + '" stroke="var(--grid)"/>';
+    s += '<text x="' + (L - 6) + '" y="' + (sy(t) + 4) + '" text-anchor="end">' + t + "</text>";
   });
-  for (var i = 0; i < n; i += 10) {
-    s += '<text x="' + sx(i) + '" y="' + (H - 8) + '" text-anchor="middle">' + labels[i] + "</text>";
-  }
+  for (var i = 0; i < n; i += 10) s += '<text x="' + sx(i) + '" y="' + (H - 8) + '" text-anchor="middle">' + labels[i] + "</text>";
   var line = counts.map(function (v, i) { return (i ? "L" : "M") + sx(i).toFixed(1) + " " + sy(v).toFixed(1); }).join(" ");
   s += '<path d="' + line + " L" + sx(n - 1) + " " + sy(0) + " L" + sx(0) + " " + sy(0) + ' Z" fill="var(--accent-soft)"/>';
   s += '<path d="' + line + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>';
-  s += '<line id="xh" x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>';
+  s += '<line id="xh" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>';
   s += '<circle id="xd" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>';
   s += '<circle cx="' + sx(n - 1) + '" cy="' + sy(counts[n - 1]) + '" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>';
   s += '<rect id="hit" x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '" fill="transparent"/>';
@@ -212,33 +331,29 @@ function area(svg, counts, labels) {
 function render(d) {
   var rev = d.cities.reduce(function (a, r) { return a + r[1]; }, 0);
   var orders = d.products.reduce(function (a, r) { return a + r[1]; }, 0);
-  var cities = d.cities.slice().sort(function (a, b) { return b[1] - a[1]; });
-  var prods = d.products.slice().sort(function (a, b) { return b[1] - a[1]; });
+  var top = d.cities.slice().sort(function (a, b) { return b[1] - a[1]; })[0];
   document.getElementById("k-rev").textContent = fmt(rev);
-  document.getElementById("k-orders").textContent = fmtFull(orders);
-  document.getElementById("k-aov").textContent = (rev / orders).toFixed(2);
-  document.getElementById("k-city").textContent = cities[0][0];
-  document.getElementById("k-city-note").textContent = (cities[0][1] / rev * 100).toFixed(1) + "% of revenue";
-  document.getElementById("ts-desc").textContent = "Last 60 minutes, India time";
-  bars(document.getElementById("city-bars"), cities, "money");
-  bars(document.getElementById("prod-bars"), prods, "count");
+  document.getElementById("k-orders").textContent = full(orders);
+  document.getElementById("k-aov").textContent = orders ? (rev / orders).toFixed(2) : "0";
+  document.getElementById("k-city").textContent = top ? top[0] : "-";
+  bars("city-bars", d.cities.slice().sort(function (a, b) { return b[1] - a[1]; }), true);
+  bars("prod-bars", d.products.slice().sort(function (a, b) { return b[1] - a[1]; }), false);
   area(document.getElementById("ts"), d.minutes.map(function (r) { return r[1]; }), d.minutes.map(function (r) { return r[0]; }));
 }
 
-/* Paste the URL printed by `gcloud functions deploy` for order-dashboard-api here. */
-var API_URL = "https://us-central1-gcp-streaming-pipelinee.cloudfunctions.net/order-dashboard-api";
-var stamp = document.getElementById("stamp");
-
-render(DEFAULT_DATA);
+var badge = document.getElementById("badge"), stamp = document.getElementById("stamp");
+render(SAMPLE);
 
 function poll() {
-  if (API_URL.indexOf("http") !== 0 || document.hidden) return;
-  fetch(API_URL)
+  if (CONFIG.apiUrl.indexOf("http") !== 0 || document.hidden) return;
+  fetch(CONFIG.apiUrl)
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(function (d) { render(d); stamp.textContent = "Live, updated " + d.updated; })
-    .catch(function () { stamp.textContent = "Connection lost, retrying"; });
+    .then(function (d) { render(d); badge.className = "badge live"; stamp.textContent = "Live, updated " + d.updated; })
+    .catch(function () { badge.className = "badge"; stamp.textContent = "Reconnecting, showing last data"; });
 }
 poll();
 setInterval(poll, 20000);
 document.addEventListener("visibilitychange", poll);
 </script>
+</body>
+</html>
